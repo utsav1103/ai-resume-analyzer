@@ -1,6 +1,5 @@
 import { Link } from 'react-router'
 import ScoreCircle from './ScoreCircle'
-import { useEffect } from 'react'
 
 const ResumeCard = ({ resume: { id, companyName, jobTitle, feedback, imagePath } }: { resume: Resume }) => {
 
