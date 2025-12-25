@@ -19,10 +19,9 @@ export default function Home() {
         <h1>Track Your Application & Resume Ratings</h1>
         <h2>Review and check AI-Powered feedback.</h2>
       </div>
-    </section>
 
     {resumes?.length > 0 && (
-
+      
       <div className="resumes-section">
         {resumes.map((resume) => (
           <ResumeCard key={resume.id} resume={resume} />
@@ -31,6 +30,7 @@ export default function Home() {
       </div>
     )}
 
+    </section>
 
   </main>
 }
