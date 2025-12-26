@@ -1,7 +1,7 @@
-const upload = () => {
+const Upload = () => {
   return (
-    <div>upload</div>
+    <div>Upload</div>
   )
 }
 
-export default upload
+export default Upload
