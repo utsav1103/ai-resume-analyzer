@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from "react"
+import FileUploader from "~/components/fileUploader";
 import Navbar from "~/components/Navbar"
 
 const Upload = () => {
@@ -46,12 +47,12 @@ const Upload = () => {
 
               <div className="form-div">
                 <label htmlFor="uploader">Upload Resume</label>
-                <div>
-
-                </div>
+                <FileUploader/>
               </div>
   
-            
+            <button className="primary-button" type="submit">
+              Analyze Resume
+            </button>
 
             </form>
           )}
