@@ -1,8 +1,10 @@
+import { prepareInstructions } from "../../constants"
 import { useState, type FormEvent } from "react"
 import { useNavigate } from "react-router"
 import FileUploader from "~/components/FileUploader"
 import Navbar from "~/components/Navbar"
 import { convertPdfToImage } from "~/lib/pdf2img"
+
 import { usePuterStore } from "~/lib/puter"
 import { generateUUID } from "~/lib/utils"
 
@@ -17,29 +19,112 @@ const Upload = () => {
     setFile(file)
   }
 
-  const handleAnalyze = async ({companyName,jobTitle,jobDescription,file}:{companyName:string,jobTitle:string,jobDescription:string,file:File})=>{
-     setIsProcessing(true);
-     setStatusText('Uploading the file...');
-     const uploadedFile = await fs.upload([file]);
+  const handleAnalyze = async ({
+  companyName,
+  jobTitle,
+  jobDescription,
+  file,
+}: {
+  companyName: string;
+  jobTitle: string;
+  jobDescription: string;
+  file: File;
+}) => {
+  try {
+    setIsProcessing(true);
 
-     if(!uploadedFile) return setStatusText ("Error: Failed to upload file");
+    // Browser-only safety 
+    if (typeof window === "undefined") {
+      throw new Error("This action can only run in the browser");
+    }
 
-     setStatusText("Converting to image...");
-     const imageFile = await convertPdfToImage(file);
-     if(!imageFile.file) return setStatusText('Error: Failed to convert PDF to image')
-      setStatusText('Uploading the image...')
+    //  Validate file
+    if (!file) {
+      throw new Error("No file selected");
+    }
+
+    if (file.type !== "application/pdf") {
+      throw new Error("Only PDF files are supported");
+    }
+
+    //  Upload PDF
+    setStatusText("Uploading the file...");
+    const uploadedFile = await fs.upload([file]);
+
+    if (!uploadedFile) {
+      throw new Error("Failed to upload resume file");
+    }
+
+    // Convert PDF → Image
+    setStatusText("Converting PDF to image...");
+    const imageFile = await convertPdfToImage(file);
+
+    if (!imageFile.file) {
+      console.error("PDF conversion error:", imageFile.error);
+      throw new Error("Failed to convert PDF to image");
+    }
+
+    // Upload image
+    setStatusText("Uploading the image...");
     const uploadedImage = await fs.upload([imageFile.file]);
-    if(!uploadedImage) return setStatusText ("Error: Failed to upload image");
 
-    setStatusText('Preparing data...');
+    if (!uploadedImage) {
+      throw new Error("Failed to upload resume image");
+    }
 
+    //  Prepare data
+    setStatusText("Preparing data...");
     const uuid = generateUUID();
+
     const data = {
       id: uuid,
-      
-      
+      resumePath: uploadedFile.path,
+      imagePath: uploadedImage.path,
+      companyName,
+      jobTitle,
+      jobDescription,
+      feedback: "",
+    };
+
+    await kv.set(`resume:${uuid}`, JSON.stringify(data));
+
+    //  Analyze
+    setStatusText("Analyzing...");
+    const feedback = await ai.feedback(
+      uploadedFile.path,
+      prepareInstructions({ jobTitle, jobDescription })
+    );
+
+    if (!feedback) {
+      throw new Error("AI analysis failed");
     }
+
+    const feedbackText =
+      typeof feedback.message.content === "string"
+        ? feedback.message.content
+        : feedback.message.content[0].text;
+
+    data.feedback = JSON.parse(feedbackText);
+
+    await kv.set(`resume:${uuid}`, JSON.stringify(data));
+
+    
+    setStatusText("Analysis complete, redirecting...");
+    console.log(data);
+  } catch (err) {
+    console.error("Analyze error:", err);
+
+    const message =
+      err instanceof Error
+        ? err.message
+        : "Something went wrong during resume analysis";
+
+    setStatusText(`Error: ${message}`);
+  } finally {
+    setIsProcessing(false);
   }
+};
+
 
   const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
