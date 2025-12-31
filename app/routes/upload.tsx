@@ -9,138 +9,153 @@ import { usePuterStore } from "~/lib/puter"
 import { generateUUID } from "~/lib/utils"
 
 const Upload = () => {
-  const {auth, isLoading, fs, ai, kv} = usePuterStore();
+  const { auth, isLoading, fs, ai, kv } = usePuterStore();
   const navigate = useNavigate();
   const [isProcessing, setIsProcessing] = useState(false);
   const [statusText, setStatusText] = useState('');
   const [file, setFile] = useState<File | null>(null);
 
-  const handleFileSelect = (file: File | null) =>{
+  const handleFileSelect = (file: File | null) => {
     setFile(file)
   }
 
   const handleAnalyze = async ({
-  companyName,
-  jobTitle,
-  jobDescription,
-  file,
-}: {
-  companyName: string;
-  jobTitle: string;
-  jobDescription: string;
-  file: File;
-}) => {
-  try {
-    setIsProcessing(true);
+    companyName,
+    jobTitle,
+    jobDescription,
+    file,
+  }: {
+    companyName: string;
+    jobTitle: string;
+    jobDescription: string;
+    file: File;
+  }) => {
+    try {
+      setIsProcessing(true);
 
-    // Browser-only safety 
-    if (typeof window === "undefined") {
-      throw new Error("This action can only run in the browser");
+      // Browser-only safety 
+      if (typeof window === "undefined") {
+        throw new Error("This action can only run in the browser");
+      }
+
+      //  Validate file
+      if (!file) {
+        throw new Error("No file selected");
+      }
+
+      if (file.type !== "application/pdf") {
+        throw new Error("Only PDF files are supported");
+      }
+
+      //  Upload PDF
+      setStatusText("Uploading the file...");
+      let uploadedFile;
+
+      try {
+        console.log(" Starting fs.upload", {
+          name: file.name,
+          size: file.size,
+          type: file.type,
+        });
+
+        uploadedFile = await fs.upload([file]);
+
+        console.log(" fs.upload resolved:", uploadedFile);
+      } catch (err) {
+        console.error(" fs.upload threw an error:", err);
+        throw new Error("Resume file upload failed");
+      }
+
+      if (!uploadedFile) {
+        console.error(" fs.upload returned undefined/null");
+        throw new Error("Failed to upload resume file");
+      }
+      // Convert PDF → Image
+      setStatusText("Converting PDF to image...");
+      const imageFile = await convertPdfToImage(file);
+
+      if (!imageFile.file) {
+        console.error("PDF conversion error:", imageFile.error);
+        throw new Error("Failed to convert PDF to image");
+      }
+
+      // Upload image
+      setStatusText("Uploading the image...");
+      const uploadedImage = await fs.upload([imageFile.file]);
+
+      if (!uploadedImage) {
+        throw new Error("Failed to upload resume image");
+      }
+
+      //  Prepare data
+      setStatusText("Preparing data...");
+      const uuid = generateUUID();
+
+      const data = {
+        id: uuid,
+        resumePath: uploadedFile.path,
+        imagePath: uploadedImage.path,
+        companyName,
+        jobTitle,
+        jobDescription,
+        feedback: "",
+      };
+
+      await kv.set(`resume:${uuid}`, JSON.stringify(data));
+
+      //  Analyze
+      setStatusText("Analyzing...");
+      const feedback = await ai.feedback(
+        uploadedFile.path,
+        prepareInstructions({ jobTitle, jobDescription })
+      );
+
+      if (!feedback) {
+        throw new Error("AI analysis failed");
+      }
+
+      const feedbackText =
+        typeof feedback.message.content === "string"
+          ? feedback.message.content
+          : feedback.message.content[0].text;
+
+      data.feedback = JSON.parse(feedbackText);
+
+      await kv.set(`resume:${uuid}`, JSON.stringify(data));
+
+
+      setStatusText("Analysis complete, redirecting...");
+      console.log(data);
+      navigate(`/resume/${uuid}`);
+    } catch (err) {
+      console.error("Analyze error:", err);
+
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Something went wrong during resume analysis";
+
+      setStatusText(`Error: ${message}`);
+    } finally {
+      setIsProcessing(false);
     }
-
-    //  Validate file
-    if (!file) {
-      throw new Error("No file selected");
-    }
-
-    if (file.type !== "application/pdf") {
-      throw new Error("Only PDF files are supported");
-    }
-
-    //  Upload PDF
-    setStatusText("Uploading the file...");
-    const uploadedFile = await fs.upload([file]);
-
-    if (!uploadedFile) {
-      throw new Error("Failed to upload resume file");
-    }
-
-    // Convert PDF → Image
-    setStatusText("Converting PDF to image...");
-    const imageFile = await convertPdfToImage(file);
-
-    if (!imageFile.file) {
-      console.error("PDF conversion error:", imageFile.error);
-      throw new Error("Failed to convert PDF to image");
-    }
-
-    // Upload image
-    setStatusText("Uploading the image...");
-    const uploadedImage = await fs.upload([imageFile.file]);
-
-    if (!uploadedImage) {
-      throw new Error("Failed to upload resume image");
-    }
-
-    //  Prepare data
-    setStatusText("Preparing data...");
-    const uuid = generateUUID();
-
-    const data = {
-      id: uuid,
-      resumePath: uploadedFile.path,
-      imagePath: uploadedImage.path,
-      companyName,
-      jobTitle,
-      jobDescription,
-      feedback: "",
-    };
-
-    await kv.set(`resume:${uuid}`, JSON.stringify(data));
-
-    //  Analyze
-    setStatusText("Analyzing...");
-    const feedback = await ai.feedback(
-      uploadedFile.path,
-      prepareInstructions({ jobTitle, jobDescription })
-    );
-
-    if (!feedback) {
-      throw new Error("AI analysis failed");
-    }
-
-    const feedbackText =
-      typeof feedback.message.content === "string"
-        ? feedback.message.content
-        : feedback.message.content[0].text;
-
-    data.feedback = JSON.parse(feedbackText);
-
-    await kv.set(`resume:${uuid}`, JSON.stringify(data));
-
-    
-    setStatusText("Analysis complete, redirecting...");
-    console.log(data);
-    navigate(`/resume/${uuid}`);
-  } catch (err) {
-    console.error("Analyze error:", err);
-
-    const message =
-      err instanceof Error
-        ? err.message
-        : "Something went wrong during resume analysis";
-
-    setStatusText(`Error: ${message}`);
-  } finally {
-    setIsProcessing(false);
-  }
-};
+  };
 
 
   const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const form = e.currentTarget.closest('form');
-    if(!form) return;
-    const formData = new FormData (form);
+    if (!form) return;
+    const formData = new FormData(form);
 
     const companyName = formData.get('company-name') as string;
     const jobTitle = formData.get('job-title') as string;
     const jobDescription = formData.get('job-description') as string;
 
-    if(!file) return;
+    if (!file) return;
 
-    handleAnalyze({companyName,jobTitle,jobDescription,file});
-    
+    handleAnalyze({ companyName, jobTitle, jobDescription, file });
+
   }
 
   return (
