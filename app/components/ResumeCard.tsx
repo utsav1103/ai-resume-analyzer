@@ -43,7 +43,7 @@ const ResumeCard = ({ resume: { id, companyName, jobTitle, feedback, imagePath }
 
                     <div className='w-full h-full'>
                         <img
-                            src={imagePath}
+                            src={resumeUrl}
                             alt='resume'
                             className='w-full h-[350px] max-sm:h-[200px] object-cover object-top'
                         />
